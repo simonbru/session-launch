@@ -21,8 +21,20 @@ def method_call_handler(
 ):
     executable, args = params
     print(f'Run "{executable}" with args: {args}')
-    subprocess.Popen([executable, *args])
-    invocation.return_value()
+    spawn_flags = GLib.SpawnFlags.SEARCH_PATH
+    if method_name == 'Exec':
+        spawn_flags |= GLib.SpawnFlags.DO_NOT_REAP_CHILD
+    pid, *_fds = GLib.spawn_async(
+        argv=[executable, *args],
+        flags=spawn_flags,
+    )
+    if method_name == 'Open':
+        invocation.return_value()
+    elif method_name == 'Exec':
+        def callback(pid, status):
+            value = GLib.Variant('(i)', (status,))
+            invocation.return_value(value)
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, callback)
 
 
 def bus_acquired_handler(dbus, _name):

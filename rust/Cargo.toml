@@ -1,0 +1,7 @@
+[package]
+name = "rust-service"
+version = "0.1.0"
+authors = ["Simon Brulhart <simon@brulhart.me>"]
+
+[dependencies]
+dbus = "0.5.4"

@@ -1,7 +1,7 @@
 extern crate dbus;
 
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use dbus::{Connection, ConnectionItem, BusType, Message, NameFlag};
 use dbus::tree::Factory;
 
@@ -61,27 +61,29 @@ fn main() {
 
     println!("Service started");
 
-    for item in c.iter(1000) {
+    let (replies_tx, replies_rx) = mpsc::channel();
+    for item in c.iter(100) {
         use ConnectionItem::*;
-        let message = match item {
-            MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),
-            _ => None
-        };
-        let message = if let Some(m) = message {
-            m
-        } else {
-            continue;
-        };
-        let messages = tree.handle(&message);
-        println!("{:?}", messages);
-        if let None = messages {
-            continue;
+        println!("item received: {:?}", item);
+        match item {
+            MethodCall(m) | Signal(m) | MethodReturn(m) => {
+                let messages = tree.handle(&m);
+                println!("replies: {:?}", messages);
+                if let Some(messages) = messages {
+                    replies_tx.send(messages).unwrap();
+                }
+
+            },
+            _ => ()
         }
-        for m in messages.unwrap() {
-            c.send(m);
+
+        while let Ok(messages) = replies_rx.try_recv() {
+            for m in messages {
+                c.send(m);
+            }
+
         }
     }
+}
 
-    // ...and serve other peers forever.
-    // c.iter(1000).with(tree).count();
 }

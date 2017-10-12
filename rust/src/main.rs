@@ -1,7 +1,8 @@
 extern crate dbus;
 
 use std::process::Command;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 use dbus::{Connection, ConnectionItem, BusType, Message, NameFlag};
 use dbus::tree::Factory;
 
@@ -12,7 +13,7 @@ fn main() {
 
     // The choice of factory tells us what type of tree we want,
     // and if we want any extra data inside. We pick the simplest variant.
-    let f = Factory::new_fn::<()>();
+    let f = Factory::new_sync::<()>();
 
 
     // We create a tree with one object path inside and make that path introspectable.
@@ -62,15 +63,18 @@ fn main() {
     println!("Service started");
 
     let (replies_tx, replies_rx) = mpsc::channel();
+    let tree = Arc::new(tree);
     for item in c.iter(100) {
-        use ConnectionItem::*;
-        println!("item received: {:?}", item);
-        if let Some(m) = item.to_message() {
-            let messages = tree.handle(m);
-            println!("replies: {:?}", messages);
-            if let Some(messages) = messages {
-                replies_tx.send(messages).unwrap();
-            }
+        if let Some(msg) = item.to_message() {
+            println!("item received: {:?}", msg);
+            let (replies_tx, tree) = (replies_tx.clone(), tree.clone());
+            thread::spawn(move || {
+                let messages = tree.handle(&msg);
+                println!("replies: {:?}", messages);
+                if let Some(messages) = messages {
+                    replies_tx.send(messages).unwrap();
+                }
+            });
         }
 
         while let Ok(messages) = replies_rx.try_recv() {
@@ -83,14 +87,14 @@ fn main() {
 }
 
 trait ToMessage {
-    fn to_message(&self) -> Option<&Message>;
+    fn to_message(self) -> Option<Message>;
 }
 
 impl ToMessage for ConnectionItem {
-    fn to_message(&self) -> Option<&Message> {
+    fn to_message(self) -> Option<Message> {
         use ConnectionItem::*;
-        match *self {
-            MethodCall(ref m) | Signal(ref m) | MethodReturn(ref m) => Some(m),
+        match self {
+            MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),
             _ => None,
         }
     }

@@ -2,7 +2,7 @@ extern crate dbus;
 
 use std::process::Command;
 use std::sync::Arc;
-use dbus::{Connection, BusType, NameFlag};
+use dbus::{Connection, ConnectionItem, BusType, Message, NameFlag};
 use dbus::tree::Factory;
 
 fn main() {
@@ -61,6 +61,27 @@ fn main() {
 
     println!("Service started");
 
+    for item in c.iter(1000) {
+        use ConnectionItem::*;
+        let message = match item {
+            MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),
+            _ => None
+        };
+        let message = if let Some(m) = message {
+            m
+        } else {
+            continue;
+        };
+        let messages = tree.handle(&message);
+        println!("{:?}", messages);
+        if let None = messages {
+            continue;
+        }
+        for m in messages.unwrap() {
+            c.send(m);
+        }
+    }
+
     // ...and serve other peers forever.
-    c.iter(1000).with(tree).count();
+    // c.iter(1000).with(tree).count();
 }

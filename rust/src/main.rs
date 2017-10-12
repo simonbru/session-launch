@@ -65,16 +65,12 @@ fn main() {
     for item in c.iter(100) {
         use ConnectionItem::*;
         println!("item received: {:?}", item);
-        match item {
-            MethodCall(m) | Signal(m) | MethodReturn(m) => {
-                let messages = tree.handle(&m);
-                println!("replies: {:?}", messages);
-                if let Some(messages) = messages {
-                    replies_tx.send(messages).unwrap();
-                }
-
-            },
-            _ => ()
+        if let Some(m) = item.to_message() {
+            let messages = tree.handle(m);
+            println!("replies: {:?}", messages);
+            if let Some(messages) = messages {
+                replies_tx.send(messages).unwrap();
+            }
         }
 
         while let Ok(messages) = replies_rx.try_recv() {
@@ -86,4 +82,16 @@ fn main() {
     }
 }
 
+trait ToMessage {
+    fn to_message(&self) -> Option<&Message>;
+}
+
+impl ToMessage for ConnectionItem {
+    fn to_message(&self) -> Option<&Message> {
+        use ConnectionItem::*;
+        match *self {
+            MethodCall(ref m) | Signal(ref m) | MethodReturn(ref m) => Some(m),
+            _ => None,
+        }
+    }
 }

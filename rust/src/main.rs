@@ -3,10 +3,14 @@ extern crate dbus;
 use std::process::Command;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
+
 use dbus::{Connection, ConnectionItem, BusType, Message, NameFlag};
 use dbus::tree::Factory;
 
 fn main() {
+    let wait_duration_before_exit = Duration::from_secs(30);
+
     // Let's start by starting up a connection to the session bus and register a name.
     let c = Connection::get_private(BusType::Session).unwrap();
     c.register_name("simonbru.SessionLaunch", NameFlag::ReplaceExisting as u32).unwrap();
@@ -64,24 +68,42 @@ fn main() {
 
     let (replies_tx, replies_rx) = mpsc::channel();
     let tree = Arc::new(tree);
+    let thread_counter = Arc::new(());
+    let mut last_action_time = Instant::now();
     for item in c.iter(100) {
         if let Some(msg) = item.into_message() {
             println!("item received: {:?}", msg);
             let (replies_tx, tree) = (replies_tx.clone(), tree.clone());
+            let thread_reference = thread_counter.clone();
             thread::spawn(move || {
                 let messages = tree.handle(&msg);
                 println!("replies: {:?}", messages);
                 if let Some(messages) = messages {
                     replies_tx.send(messages).unwrap();
                 }
+                // hack to keep ref to thread_counter until end of thread
+                thread_reference;
             });
+            last_action_time = Instant::now();
         }
 
         while let Ok(messages) = replies_rx.try_recv() {
             for m in messages {
                 c.send(m).unwrap();
             }
+            last_action_time = Instant::now();
+        }
 
+        let nb_pending_requests = Arc::strong_count(&thread_counter) - 1;
+//        println!("{:?}, {:?}", nb_pending_requests, last_action_time.elapsed());
+        if nb_pending_requests == 0
+            && last_action_time.elapsed() > wait_duration_before_exit
+        {
+            println!(
+                "Inactive for {} seconds, exiting.",
+                wait_duration_before_exit.as_secs()
+            );
+            break;
         }
     }
 }

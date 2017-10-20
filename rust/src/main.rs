@@ -35,7 +35,7 @@ fn main() {
                     // messages to send back.
 
                     let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
-                    let s = format!("Executable: {}\nArgs: {:?}", executable, args);
+                    let s = format!("Exec executable: {}\nArgs: {:?}", executable, args);
                     println!("{}", s);
                     let status = Command::new(&executable)
                         .args(&args)
@@ -54,6 +54,21 @@ fn main() {
                     Ok(vec!(mret))
 
                 // Our method has one output argument and one input argument.
+                })
+                .inarg::<&str,_>("executable")
+                .inarg::<&str,_>("args")
+            ).add_m(
+                f.method("Open", (), move |m| {
+                    let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
+                    let s = format!("Open executable: {}\nArgs: {:?}", executable, args);
+                    println!("{}", s);
+                    let child = Command::new(&executable)
+                        .args(&args)
+                        .spawn()
+                        .unwrap();
+
+                    let mret = m.msg.method_return();
+                    Ok(vec!(mret))
                 })
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")

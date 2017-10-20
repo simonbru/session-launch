@@ -65,7 +65,7 @@ fn main() {
     let (replies_tx, replies_rx) = mpsc::channel();
     let tree = Arc::new(tree);
     for item in c.iter(100) {
-        if let Some(msg) = item.to_message() {
+        if let Some(msg) = item.into_message() {
             println!("item received: {:?}", msg);
             let (replies_tx, tree) = (replies_tx.clone(), tree.clone());
             thread::spawn(move || {
@@ -79,7 +79,7 @@ fn main() {
 
         while let Ok(messages) = replies_rx.try_recv() {
             for m in messages {
-                c.send(m);
+                c.send(m).unwrap();
             }
 
         }
@@ -87,11 +87,11 @@ fn main() {
 }
 
 trait ToMessage {
-    fn to_message(self) -> Option<Message>;
+    fn into_message(self) -> Option<Message>;
 }
 
 impl ToMessage for ConnectionItem {
-    fn to_message(self) -> Option<Message> {
+    fn into_message(self) -> Option<Message> {
         use ConnectionItem::*;
         match self {
             MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),

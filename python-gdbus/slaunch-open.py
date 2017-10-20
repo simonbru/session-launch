@@ -20,16 +20,16 @@ params = GLib.Variant(
 print(params)
 
 
-status, = dbus.call_sync(
+response = dbus.call_sync(
     BUS_NAME,
     OBJECT_PATH,
     interface_name=BUS_NAME,
-    method_name='Exec',
+    method_name='Open',
     parameters=params,
-    reply_type=GLib.VariantType('(i)'),
+    reply_type=GLib.VariantType('()'),
     flags=Gio.DBusCallFlags.NONE,
     timeout_msec=600_000,
     cancellable=None
 )
-print(status)
-sys.exit(256)
+print(response)
+sys.exit(0)

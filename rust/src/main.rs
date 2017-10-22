@@ -1,11 +1,14 @@
 extern crate dbus;
 
+use std::error::Error;
+use std::ffi::CString;
+use std::io;
 use std::process::Command;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dbus::{Connection, ConnectionItem, BusType, Message, NameFlag};
+use dbus::{Connection, ConnectionItem, BusType, ErrorName, Message, NameFlag};
 use dbus::tree::Factory;
 
 fn main() {
@@ -62,12 +65,29 @@ fn main() {
                     let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
                     let s = format!("Open executable: {}\nArgs: {:?}", executable, args);
                     println!("{}", s);
-                    let child = Command::new(&executable)
+                    let result = Command::new(&executable)
                         .args(&args)
-                        .spawn()
-                        .unwrap();
+                        .spawn();
 
-                    let mret = m.msg.method_return();
+                    let error_name = ErrorName::new("simonbru.SessionLaunch.Error").unwrap();
+//                    let error_msg = CString::new("Error message").unwrap();
+
+                    let mret = match result {
+                        Ok(_) => m.msg.method_return(),
+                        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
+                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
+                            let err_msg = format!("{}", err);
+                            let err_cstr = CString::new(err_msg).unwrap();
+                            m.msg.error(&err_name, &err_cstr)
+                        },
+                        Err(err) => {
+                            let err_str = format!("{}", err);
+                            let err_cstr = CString::new(err_str).unwrap();
+                            m.msg.error(&error_name, &err_cstr)
+                        }
+                    };
+
+//                    let mret = m.msg.method_return();
                     Ok(vec!(mret))
                 })
                 .inarg::<&str,_>("executable")

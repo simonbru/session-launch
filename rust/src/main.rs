@@ -40,23 +40,33 @@ fn main() {
                     let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
                     let s = format!("Exec executable: {}\nArgs: {:?}", executable, args);
                     println!("{}", s);
-                    let status = Command::new(&executable)
+                    let result = Command::new(&executable)
                         .args(&args)
-                        .status()
-                        .unwrap();
+                        .status();
 
-                    let status_code = match status.code() {
-                        Some(code) => code,
-                        None => 0
+                    let mret = match result {
+                        Ok(status) => {
+                            let status_code = match status.code() {
+                                Some(code) => code,
+                                None => 0
+                            };
+                            m.msg.method_return().append1::<i32>(status_code)
+                        },
+                        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
+                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
+                            let err_msg = format!("{}", err);
+                            let err_cstr = CString::new(err_msg).unwrap();
+                            m.msg.error(&err_name, &err_cstr)
+                        },
+                        Err(err) => {
+                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
+                            let err_str = format!("{}", err);
+                            let err_cstr = CString::new(err_str).unwrap();
+                            m.msg.error(&err_name, &err_cstr)
+                        }
                     };
-                    let mret = m.msg.method_return().append1::<i32>(status_code);
 
-
-                    // Two messages will be returned - one is the method return (and should always be there),
-                    // and in our case we also have a signal we want to send at the same time.
                     Ok(vec!(mret))
-
-                // Our method has one output argument and one input argument.
                 })
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
@@ -69,9 +79,6 @@ fn main() {
                         .args(&args)
                         .spawn();
 
-                    let error_name = ErrorName::new("simonbru.SessionLaunch.Error").unwrap();
-//                    let error_msg = CString::new("Error message").unwrap();
-
                     let mret = match result {
                         Ok(_) => m.msg.method_return(),
                         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
@@ -81,13 +88,13 @@ fn main() {
                             m.msg.error(&err_name, &err_cstr)
                         },
                         Err(err) => {
+                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
                             let err_str = format!("{}", err);
                             let err_cstr = CString::new(err_str).unwrap();
-                            m.msg.error(&error_name, &err_cstr)
+                            m.msg.error(&err_name, &err_cstr)
                         }
                     };
 
-//                    let mret = m.msg.method_return();
                     Ok(vec!(mret))
                 })
                 .inarg::<&str,_>("executable")

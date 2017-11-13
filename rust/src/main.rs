@@ -3,13 +3,70 @@ extern crate dbus;
 use std::error::Error;
 use std::ffi::CString;
 use std::io;
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use dbus::{Connection, ConnectionItem, BusType, ErrorName, Message, NameFlag};
-use dbus::tree::Factory;
+use dbus::tree::{Factory, MethodInfo, MethodResult, MTSync};
+
+
+fn method_exec(m: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
+    // This is the callback that will be called when another peer on the bus calls our method.
+    // the callback receives "MethodInfo" struct and can return either an error, or a list of
+    // messages to send back.
+
+    let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
+    let method_name = m.method.get_name();
+    println!("{} executable: {}\nArgs: {:?}", method_name, executable, args);
+
+    enum CommandResult {
+        Sync(ExitStatus),
+        Async,
+        Error(io::Error),
+    }
+
+    let mut command = Command::new(&executable);
+    command.args(&args);
+    let result = match &**method_name {
+        "Exec" => match command.status() {
+            Ok(status) => CommandResult::Sync(status),
+            Err(e) => CommandResult::Error(e),
+        },
+        "Open" => match command.spawn() {
+            Ok(_) => CommandResult::Async,
+            Err(e) => CommandResult::Error(e),
+        },
+        _ => panic!(format!("Unsupported method name: {}", method_name))
+    };
+
+    let mret = match result {
+        CommandResult::Sync(status) => {
+            let status_code = match status.code() {
+                Some(code) => code,
+                None => 0
+            };
+            m.msg.method_return().append1::<i32>(status_code)
+        },
+        CommandResult::Async => {
+            m.msg.method_return()
+        },
+        CommandResult::Error(ref err) if err.kind() == io::ErrorKind::NotFound => {
+            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
+            let err_msg = format!("{}", err);
+            let err_cstr = CString::new(err_msg).unwrap();
+            m.msg.error(&err_name, &err_cstr)
+        },
+        CommandResult::Error(ref err) => {
+            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
+            let err_str = format!("{}", err);
+            let err_cstr = CString::new(err_str).unwrap();
+            m.msg.error(&err_name, &err_cstr)
+        }
+    };
+    Ok(vec!(mret))
+}
 
 fn main() {
     let wait_duration_before_exit = Duration::from_secs(30);
@@ -31,72 +88,11 @@ fn main() {
             f.interface("simonbru.SessionLaunch", ()).add_m(
 
                 // ...and a method inside the interface.
-                f.method("Exec", (), move |m| {
-
-                    // This is the callback that will be called when another peer on the bus calls our method.
-                    // the callback receives "MethodInfo" struct and can return either an error, or a list of
-                    // messages to send back.
-
-                    let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
-                    let s = format!("Exec executable: {}\nArgs: {:?}", executable, args);
-                    println!("{}", s);
-                    let result = Command::new(&executable)
-                        .args(&args)
-                        .status();
-
-                    let mret = match result {
-                        Ok(status) => {
-                            let status_code = match status.code() {
-                                Some(code) => code,
-                                None => 0
-                            };
-                            m.msg.method_return().append1::<i32>(status_code)
-                        },
-                        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
-                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
-                            let err_msg = format!("{}", err);
-                            let err_cstr = CString::new(err_msg).unwrap();
-                            m.msg.error(&err_name, &err_cstr)
-                        },
-                        Err(err) => {
-                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
-                            let err_str = format!("{}", err);
-                            let err_cstr = CString::new(err_str).unwrap();
-                            m.msg.error(&err_name, &err_cstr)
-                        }
-                    };
-
-                    Ok(vec!(mret))
-                })
+                f.method("Exec", (), method_exec)
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             ).add_m(
-                f.method("Open", (), move |m| {
-                    let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
-                    let s = format!("Open executable: {}\nArgs: {:?}", executable, args);
-                    println!("{}", s);
-                    let result = Command::new(&executable)
-                        .args(&args)
-                        .spawn();
-
-                    let mret = match result {
-                        Ok(_) => m.msg.method_return(),
-                        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
-                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
-                            let err_msg = format!("{}", err);
-                            let err_cstr = CString::new(err_msg).unwrap();
-                            m.msg.error(&err_name, &err_cstr)
-                        },
-                        Err(err) => {
-                            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
-                            let err_str = format!("{}", err);
-                            let err_cstr = CString::new(err_str).unwrap();
-                            m.msg.error(&err_name, &err_cstr)
-                        }
-                    };
-
-                    Ok(vec!(mret))
-                })
+                f.method("Open", (), method_exec)
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             )

@@ -12,14 +12,13 @@ use dbus::{Connection, ConnectionItem, BusType, ErrorName, Message, NameFlag};
 use dbus::tree::{Factory, MethodInfo, MethodResult, MTSync};
 
 
-fn method_exec(m: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
+fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodResult {
     // This is the callback that will be called when another peer on the bus calls our method.
     // the callback receives "MethodInfo" struct and can return either an error, or a list of
     // messages to send back.
 
-    let (executable, args): (&str, Vec<&str>) = m.msg.read2()?;
-    let method_name = m.method.get_name();
-    println!("{} executable: {}\nArgs: {:?}", method_name, executable, args);
+    let (executable, args): (&str, Vec<&str>) = method_info.msg.read2()?;
+    println!("Exec {}: {}\nArgs: {:?}", if async {"async"} else {"sync"}, executable, args);
 
     enum CommandResult {
         Sync(ExitStatus),
@@ -29,16 +28,16 @@ fn method_exec(m: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
 
     let mut command = Command::new(&executable);
     command.args(&args);
-    let result = match &**method_name {
-        "Exec" => match command.status() {
-            Ok(status) => CommandResult::Sync(status),
-            Err(e) => CommandResult::Error(e),
-        },
-        "Open" => match command.spawn() {
+    let result = if async {
+        match command.spawn() {
             Ok(_) => CommandResult::Async,
             Err(e) => CommandResult::Error(e),
-        },
-        _ => panic!(format!("Unsupported method name: {}", method_name))
+        }
+    } else {
+        match command.status() {
+            Ok(status) => CommandResult::Sync(status),
+            Err(e) => CommandResult::Error(e),
+        }
     };
 
     let mret = match result {
@@ -47,22 +46,22 @@ fn method_exec(m: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
                 Some(code) => code,
                 None => 0
             };
-            m.msg.method_return().append1::<i32>(status_code)
+            method_info.msg.method_return().append1::<i32>(status_code)
         },
         CommandResult::Async => {
-            m.msg.method_return()
+            method_info.msg.method_return()
         },
         CommandResult::Error(ref err) if err.kind() == io::ErrorKind::NotFound => {
             let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
             let err_msg = format!("{}", err);
             let err_cstr = CString::new(err_msg).unwrap();
-            m.msg.error(&err_name, &err_cstr)
+            method_info.msg.error(&err_name, &err_cstr)
         },
         CommandResult::Error(ref err) => {
             let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
             let err_str = format!("{}", err);
             let err_cstr = CString::new(err_str).unwrap();
-            m.msg.error(&err_name, &err_cstr)
+            method_info.msg.error(&err_name, &err_cstr)
         }
     };
     Ok(vec!(mret))
@@ -88,11 +87,11 @@ fn main() {
             f.interface("simonbru.SessionLaunch", ()).add_m(
 
                 // ...and a method inside the interface.
-                f.method("Exec", (), method_exec)
+                f.method("Exec", (), move |m| method_exec(m, false))
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             ).add_m(
-                f.method("Open", (), method_exec)
+                f.method("Open", (), move |m| method_exec(m, true))
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             )

@@ -12,6 +12,13 @@ use dbus::{Connection, ConnectionItem, BusType, ErrorName, Message, NameFlag};
 use dbus::tree::{Factory, MethodInfo, MethodResult, MTSync};
 
 
+fn method_error(method_info: &MethodInfo<MTSync<()>, ()>, error: &io::Error, error_name: &str) -> Message {
+    let err_name = ErrorName::new(error_name).unwrap();
+    let err_msg = format!("{}", error);
+    let err_cstr = CString::new(err_msg).unwrap();
+    method_info.msg.error(&err_name, &err_cstr)
+}
+
 fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodResult {
     // This is the callback that will be called when another peer on the bus calls our method.
     // the callback receives "MethodInfo" struct and can return either an error, or a list of
@@ -52,16 +59,10 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
             method_info.msg.method_return()
         },
         CommandResult::Error(ref err) if err.kind() == io::ErrorKind::NotFound => {
-            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.NotFound").unwrap();
-            let err_msg = format!("{}", err);
-            let err_cstr = CString::new(err_msg).unwrap();
-            method_info.msg.error(&err_name, &err_cstr)
+            method_error(method_info, err, "simonbru.SessionLaunch.Error.NotFound")
         },
         CommandResult::Error(ref err) => {
-            let err_name = ErrorName::new("simonbru.SessionLaunch.Error.Unknown").unwrap();
-            let err_str = format!("{}", err);
-            let err_cstr = CString::new(err_str).unwrap();
-            method_info.msg.error(&err_name, &err_cstr)
+            method_error(method_info, err, "simonbru.SessionLaunch.Error.Unknown")
         }
     };
     Ok(vec!(mret))

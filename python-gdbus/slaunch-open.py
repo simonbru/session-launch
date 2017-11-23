@@ -13,9 +13,11 @@ OBJECT_PATH = '/simonbru/SessionLaunch'
 
 dbus = Gio.bus_get_sync(Gio.BusType.SESSION)
 
+executable, *exec_args = sys.argv[1:]
+workdir = Path().absolute().as_posix()
 params = GLib.Variant(
-    '(sas)',
-    (sys.argv[1], sys.argv[2:])
+    '(ssas)',
+    (workdir, executable, exec_args)
 )
 print(params)
 

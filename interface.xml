@@ -2,10 +2,12 @@
 <node>
   <interface name="simonbru.SessionLaunch">
     <method name="Open">
+      <arg name="workdir" type="s" direction="in"/>
       <arg name="executable" type="s" direction="in"/>
       <arg name="args" type="as" direction="in"/>
     </method>
     <method name="Exec">
+      <arg name="workdir" type="s" direction="in"/>
       <arg name="executable" type="s" direction="in"/>
       <arg name="args" type="as" direction="in"/>
       <arg name="status" type="i" direction="out"/>

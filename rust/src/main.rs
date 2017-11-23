@@ -24,7 +24,7 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
     // the callback receives "MethodInfo" struct and can return either an error, or a list of
     // messages to send back.
 
-    let (executable, args): (&str, Vec<&str>) = method_info.msg.read2()?;
+    let (workdir, executable, args): (&str, &str, Vec<&str>) = method_info.msg.read3()?;
     println!("Exec {}: {}\nArgs: {:?}", if async {"async"} else {"sync"}, executable, args);
 
     enum CommandResult {
@@ -34,7 +34,7 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
     }
 
     let mut command = Command::new(&executable);
-    command.args(&args);
+    command.args(&args).current_dir(workdir);
     let result = if async {
         match command.spawn() {
             Ok(_) => CommandResult::Async,
@@ -89,10 +89,12 @@ fn main() {
 
                 // ...and a method inside the interface.
                 f.method("Exec", (), move |m| method_exec(m, false))
+                .inarg::<&str,_>("workdir")
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             ).add_m(
                 f.method("Open", (), move |m| method_exec(m, true))
+                .inarg::<&str,_>("workdir")
                 .inarg::<&str,_>("executable")
                 .inarg::<&str,_>("args")
             )

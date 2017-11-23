@@ -20,14 +20,14 @@ def retrieve_interface_def():
 def method_call_handler(
     dbus, sender, object_path, bus_name, method_name, params, invocation
 ):
-    executable, args = params
+    workdir, executable, args = params
     print(f'Run "{executable}" with args: {args}')
     spawn_flags = GLib.SpawnFlags.SEARCH_PATH
     if method_name == 'Exec':
         spawn_flags |= GLib.SpawnFlags.DO_NOT_REAP_CHILD
     pid, *_fds = GLib.spawn_async(
         argv=[executable, *args],
-        working_directory=os.environ['HOME'],
+        working_directory=workdir,
         flags=spawn_flags,
     )
     if method_name == 'Open':

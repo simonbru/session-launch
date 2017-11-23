@@ -36,7 +36,8 @@ fn main() {
         .unwrap()
         .append3(current_dir.to_str().unwrap(), executable, args);
 
-    let resp = con.send_with_reply_and_block(msg, -1);
+    let timeout_msec = std::i32::MAX;
+    let resp = con.send_with_reply_and_block(msg, timeout_msec);
     let exit_code = match resp {
         Ok(ref msg) if synchronous_exec => msg.get1::<i32>().unwrap(),
         Ok(_) => 0,

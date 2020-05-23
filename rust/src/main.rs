@@ -1,15 +1,16 @@
 extern crate dbus;
 
-use std::error::Error;
 use std::ffi::CString;
 use std::io;
-use std::process::{Child, Command, ExitStatus};
-use std::sync::{mpsc, Arc, Mutex};
+use std::process::{Command, ExitStatus};
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use dbus::ffidisp::{BusType, Connection, ConnectionItem, NameFlag};
+use dbus::message::Message;
+use dbus::strings::ErrorName;
 use dbus::tree::{Factory, MTSync, MethodInfo, MethodResult};
-use dbus::{BusType, Connection, ConnectionItem, ErrorName, Message, NameFlag};
 
 fn method_error(
     method_info: &MethodInfo<MTSync<()>, ()>,

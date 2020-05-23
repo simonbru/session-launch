@@ -1,7 +1,7 @@
 extern crate dbus;
 
-use dbus::arg::Array;
-use dbus::{BusType, Connection, Message};
+use dbus::ffidisp::{BusType, Connection};
+use dbus::message::Message;
 use std::env;
 use std::process::exit;
 

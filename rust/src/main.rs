@@ -4,15 +4,18 @@ use std::error::Error;
 use std::ffi::CString;
 use std::io;
 use std::process::{Child, Command, ExitStatus};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dbus::{Connection, ConnectionItem, BusType, ErrorName, Message, NameFlag};
-use dbus::tree::{Factory, MethodInfo, MethodResult, MTSync};
+use dbus::tree::{Factory, MTSync, MethodInfo, MethodResult};
+use dbus::{BusType, Connection, ConnectionItem, ErrorName, Message, NameFlag};
 
-
-fn method_error(method_info: &MethodInfo<MTSync<()>, ()>, error: &io::Error, error_name: &str) -> Message {
+fn method_error(
+    method_info: &MethodInfo<MTSync<()>, ()>,
+    error: &io::Error,
+    error_name: &str,
+) -> Message {
     let err_name = ErrorName::new(error_name).unwrap();
     let err_msg = format!("{}", error);
     let err_cstr = CString::new(err_msg).unwrap();
@@ -25,7 +28,12 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
     // messages to send back.
 
     let (workdir, executable, args): (&str, &str, Vec<&str>) = method_info.msg.read3()?;
-    println!("Exec {}: {}\nArgs: {:?}", if async {"async"} else {"sync"}, executable, args);
+    println!(
+        "Exec {}: {}\nArgs: {:?}",
+        if async { "async" } else { "sync" },
+        executable,
+        args
+    );
 
     enum CommandResult {
         Sync(ExitStatus),
@@ -51,21 +59,19 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
         CommandResult::Sync(status) => {
             let status_code = match status.code() {
                 Some(code) => code,
-                None => 0
+                None => 0,
             };
             method_info.msg.method_return().append1::<i32>(status_code)
-        },
-        CommandResult::Async => {
-            method_info.msg.method_return()
-        },
+        }
+        CommandResult::Async => method_info.msg.method_return(),
         CommandResult::Error(ref err) if err.kind() == io::ErrorKind::NotFound => {
             method_error(method_info, err, "simonbru.SessionLaunch.Error.NotFound")
-        },
+        }
         CommandResult::Error(ref err) => {
             method_error(method_info, err, "simonbru.SessionLaunch.Error.Unknown")
         }
     };
-    Ok(vec!(mret))
+    Ok(vec![mret])
 }
 
 fn main() {
@@ -73,32 +79,34 @@ fn main() {
 
     // Let's start by starting up a connection to the session bus and register a name.
     let c = Connection::get_private(BusType::Session).unwrap();
-    c.register_name("simonbru.SessionLaunch", NameFlag::ReplaceExisting as u32).unwrap();
+    c.register_name("simonbru.SessionLaunch", NameFlag::ReplaceExisting as u32)
+        .unwrap();
 
     // The choice of factory tells us what type of tree we want,
     // and if we want any extra data inside. We pick the simplest variant.
     let f = Factory::new_sync::<()>();
 
-
     // We create a tree with one object path inside and make that path introspectable.
     let tree = f.tree(()).add(
-        f.object_path("/simonbru/SessionLaunch", ()).introspectable().add(
-
-            // We add an interface to the object path...
-            f.interface("simonbru.SessionLaunch", ()).add_m(
-
-                // ...and a method inside the interface.
-                f.method("Exec", (), move |m| method_exec(m, false))
-                .inarg::<&str,_>("workdir")
-                .inarg::<&str,_>("executable")
-                .inarg::<&str,_>("args")
-            ).add_m(
-                f.method("Open", (), move |m| method_exec(m, true))
-                .inarg::<&str,_>("workdir")
-                .inarg::<&str,_>("executable")
-                .inarg::<&str,_>("args")
-            )
-        )
+        f.object_path("/simonbru/SessionLaunch", ())
+            .introspectable()
+            .add(
+                // We add an interface to the object path...
+                f.interface("simonbru.SessionLaunch", ())
+                    .add_m(
+                        // ...and a method inside the interface.
+                        f.method("Exec", (), move |m| method_exec(m, false))
+                            .inarg::<&str, _>("workdir")
+                            .inarg::<&str, _>("executable")
+                            .inarg::<&str, _>("args"),
+                    )
+                    .add_m(
+                        f.method("Open", (), move |m| method_exec(m, true))
+                            .inarg::<&str, _>("workdir")
+                            .inarg::<&str, _>("executable")
+                            .inarg::<&str, _>("args"),
+                    ),
+            ),
     );
 
     // We register all object paths in the tree.
@@ -135,10 +143,8 @@ fn main() {
         }
 
         let nb_pending_requests = Arc::strong_count(&thread_counter) - 1;
-//        println!("{:?}, {:?}", nb_pending_requests, last_action_time.elapsed());
-        if nb_pending_requests == 0
-            && last_action_time.elapsed() > wait_duration_before_exit
-        {
+        //        println!("{:?}, {:?}", nb_pending_requests, last_action_time.elapsed());
+        if nb_pending_requests == 0 && last_action_time.elapsed() > wait_duration_before_exit {
             println!(
                 "Inactive for {} seconds, exiting.",
                 wait_duration_before_exit.as_secs()

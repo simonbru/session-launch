@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use dbus::ffidisp::{BusType, Connection, ConnectionItem, NameFlag};
 use dbus::message::Message;
 use dbus::strings::ErrorName;
-use dbus::tree::{Factory, MTSync, MethodInfo, MethodResult};
+use dbus_tree::{Factory, MTSync, MethodInfo, MethodResult};
 
 fn method_error(
     method_info: &MethodInfo<MTSync<()>, ()>,

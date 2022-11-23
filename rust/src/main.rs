@@ -99,13 +99,14 @@ fn main() {
                         f.method("Exec", (), move |m| method_exec(m, false))
                             .inarg::<&str, _>("workdir")
                             .inarg::<&str, _>("executable")
-                            .inarg::<&str, _>("args"),
+                            .inarg::<&[&str], _>("args")
+                            .outarg::<&i32, _>("status"),
                     )
                     .add_m(
                         f.method("Open", (), move |m| method_exec(m, true))
                             .inarg::<&str, _>("workdir")
                             .inarg::<&str, _>("executable")
-                            .inarg::<&str, _>("args"),
+                            .inarg::<&[&str], _>("args"),
                     ),
             ),
     );
@@ -131,7 +132,7 @@ fn main() {
                     replies_tx.send(messages).unwrap();
                 }
                 // hack to keep ref to thread_counter until end of thread
-                thread_reference;
+                drop(thread_reference);
             });
             last_action_time = Instant::now();
         }
@@ -144,7 +145,7 @@ fn main() {
         }
 
         let nb_pending_requests = Arc::strong_count(&thread_counter) - 1;
-        //        println!("{:?}, {:?}", nb_pending_requests, last_action_time.elapsed());
+        // println!("{:?}, {:?}", nb_pending_requests, last_action_time.elapsed());
         if nb_pending_requests == 0 && last_action_time.elapsed() > wait_duration_before_exit {
             println!(
                 "Inactive for {} seconds, exiting.",

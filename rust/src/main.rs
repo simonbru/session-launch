@@ -23,7 +23,7 @@ fn method_error(
     method_info.msg.error(&err_name, &err_cstr)
 }
 
-fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodResult {
+fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, r#async: bool) -> MethodResult {
     // This is the callback that will be called when another peer on the bus calls our method.
     // the callback receives "MethodInfo" struct and can return either an error, or a list of
     // messages to send back.
@@ -31,7 +31,7 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
     let (workdir, executable, args): (&str, &str, Vec<&str>) = method_info.msg.read3()?;
     println!(
         "Exec {}: {}\nArgs: {:?}",
-        if async { "async" } else { "sync" },
+        if r#async { "async" } else { "sync" },
         executable,
         args
     );
@@ -44,7 +44,7 @@ fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, async: bool) -> MethodR
 
     let mut command = Command::new(&executable);
     command.args(&args).current_dir(workdir);
-    let result = if async {
+    let result = if r#async {
         match command.spawn() {
             Ok(_) => CommandResult::Async,
             Err(e) => CommandResult::Error(e),
@@ -161,7 +161,7 @@ trait ToMessage {
 
 impl ToMessage for ConnectionItem {
     fn into_message(self) -> Option<Message> {
-        use ConnectionItem::*;
+        use crate::ConnectionItem::*;
         match self {
             MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),
             _ => None,

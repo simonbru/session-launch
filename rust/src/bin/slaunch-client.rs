@@ -5,21 +5,19 @@ use dbus::message::Message;
 use std::env;
 use std::process::exit;
 
-fn main() {
-    let con = Connection::get_private(BusType::Session).unwrap();
+fn run() -> Result<i32, Box<dyn std::error::Error>> {
+    let con = Connection::get_private(BusType::Session)?;
 
-    let current_dir = env::current_dir().unwrap();
-    //    let mut sysargs= env::args();
-    //    let procname = sysargs.next().unwrap();
-    //    let executable = sysargs.next().unwrap();
-    //    let args: Vec<String> = sysargs.collect();
+    let current_dir = env::current_dir()?;
+    let current_dir_str = current_dir
+        .to_str()
+        .ok_or("Current dir must be a valid utf8 string")?;
 
     let sysargs: Vec<String> = env::args().collect();
     if sysargs.len() < 2 {
-        eprintln!("ERROR: Not enough arguments");
-        exit(111);
+        return Err(Box::from("Not enough arguments"));
     }
-    //    let [procname, executable, ...] = sysargs;
+
     let procname = &sysargs[0];
     let executable = &sysargs[1];
     let args = &sysargs[2..];
@@ -32,19 +30,28 @@ fn main() {
         "/simonbru/SessionLaunch",
         "simonbru.SessionLaunch",
         method_name,
-    )
-    .unwrap()
-    .append3(current_dir.to_str().unwrap(), executable, args);
+    )?
+    .append3(current_dir_str, executable, args);
 
     let timeout_msec = std::i32::MAX;
     let resp = con.send_with_reply_and_block(msg, timeout_msec);
-    let exit_code = match resp {
-        Ok(ref msg) if synchronous_exec => msg.get1::<i32>().unwrap(),
-        Ok(_) => 0,
+    match resp {
+        Ok(ref msg) if synchronous_exec => {
+            Ok(msg.get1::<i32>().ok_or("Expected an exit code in answer")?)
+        }
+        Ok(_) => Ok(0),
         Err(error) => {
-            println!("{:?}", error);
-            222
+            Err(Box::from(error))
+        }
+    }
+}
+
+fn main() {
+    match run() {
+        Ok(exit_code) => exit(exit_code),
+        Err(error) => {
+            eprintln!("Error: {:?}", error);
+            exit(111)
         }
     };
-    exit(exit_code);
 }

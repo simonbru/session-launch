@@ -1,8 +1,16 @@
 [package]
-name = "slaunch-service"
+name = "session-launch"
 version = "0.1.0"
 authors = ["Simon Brulhart <simon@brulhart.me>"]
 edition = "2021"
+
+[[bin]]
+name = "slaunch-client"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "slaunch-service"
+path = "src/bin/service.rs"
 
 [dependencies]
 dbus = "0.9.6"

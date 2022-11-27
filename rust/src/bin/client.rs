@@ -1,14 +1,14 @@
-use std::env;
+use std::fs::File;
 use std::io::BufReader;
 use std::os::unix::io::AsFd;
-use std::process::exit;
+use std::{env, io, process, thread, error};
 
 use dbus::ffidisp::{BusType, Connection};
 use dbus::message::Message;
 
 use session_launch::run_stream_pipe;
 
-fn run() -> Result<i32, Box<dyn std::error::Error>> {
+fn run() -> Result<i32, Box<dyn error::Error>> {
     let con = Connection::get_private(BusType::Session)?;
 
     let current_dir = env::current_dir()?;
@@ -39,35 +39,35 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         // Create pipes that forward standard input/output.
         // Make sure that unecessary pipe references are dropped ASAP
         let (stdin_reader, stdin_writer) = os_pipe::pipe()?;
-        let stdin_reader_file = std::fs::File::from(stdin_reader.as_fd().try_clone_to_owned()?);
+        let stdin_reader_file = File::from(stdin_reader.as_fd().try_clone_to_owned()?);
 
         let (stdout_reader, stdout_writer) = os_pipe::pipe()?;
-        let stdout_writer_file = std::fs::File::from(stdout_writer.as_fd().try_clone_to_owned()?);
+        let stdout_writer_file = File::from(stdout_writer.as_fd().try_clone_to_owned()?);
 
         let (stderr_reader, stderr_writer) = os_pipe::pipe()?;
-        let stderr_writer_file = std::fs::File::from(stderr_writer.as_fd().try_clone_to_owned()?);
+        let stderr_writer_file = File::from(stderr_writer.as_fd().try_clone_to_owned()?);
 
         msg = msg.append3(stdin_reader_file, stdout_writer_file, stderr_writer_file);
 
-        std::thread::spawn(move || {
-            let stdin = std::io::stdin().lock();
+        thread::spawn(move || {
+            let stdin = io::stdin().lock();
             run_stream_pipe(Box::new(stdin), Box::new(stdin_writer));
         });
-        std::thread::spawn(move || {
+        thread::spawn(move || {
             run_stream_pipe(
                 Box::new(BufReader::new(stdout_reader)),
-                Box::new(std::io::stdout()),
+                Box::new(io::stdout()),
             );
         });
-        std::thread::spawn(move || {
+        thread::spawn(move || {
             run_stream_pipe(
                 Box::new(BufReader::new(stderr_reader)),
-                Box::new(std::io::stderr()),
+                Box::new(io::stderr()),
             );
         });
     };
 
-    let timeout_msec = std::i32::MAX;
+    let timeout_msec = i32::MAX;
     let resp = con.send_with_reply_and_block(msg, timeout_msec);
     match resp {
         Ok(ref msg) if synchronous_exec => {
@@ -80,10 +80,10 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
 
 fn main() {
     match run() {
-        Ok(exit_code) => exit(exit_code),
+        Ok(exit_code) => process::exit(exit_code),
         Err(error) => {
             eprintln!("Error: {:?}", error);
-            exit(111)
+            process::exit(111)
         }
     };
 }

@@ -158,7 +158,7 @@ trait ToMessage {
 
 impl ToMessage for ConnectionItem {
     fn into_message(self) -> Option<Message> {
-        use crate::ConnectionItem::*;
+        use ConnectionItem::*;
         match self {
             MethodCall(m) | Signal(m) | MethodReturn(m) => Some(m),
             _ => None,

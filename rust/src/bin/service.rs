@@ -1,8 +1,7 @@
-extern crate dbus;
-
 use std::ffi::CString;
+use std::fs::File;
 use std::io;
-use std::process::{Command, ExitStatus};
+use std::process::Command;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,67 +11,61 @@ use dbus::message::Message;
 use dbus::strings::ErrorName;
 use dbus_tree::{Factory, MTSync, MethodInfo, MethodResult};
 
-fn method_error(
-    method_info: &MethodInfo<MTSync<()>, ()>,
-    error: &io::Error,
-    error_name: &str,
-) -> Message {
-    let err_name = ErrorName::new(error_name).unwrap();
-    let err_msg = format!("{}", error);
-    let err_cstr = CString::new(err_msg).unwrap();
+fn method_error(method_info: &MethodInfo<MTSync<()>, ()>, error: &io::Error) -> Message {
+    let err_name = match error.kind() {
+        io::ErrorKind::NotFound => "simonbru.SessionLaunch.Error.NotFound",
+        _ => "simonbru.SessionLaunch.Error.Unknown",
+    };
+    let err_name = ErrorName::new(err_name).unwrap();
+    let err_cstr = CString::new(error.to_string()).unwrap();
     method_info.msg.error(&err_name, &err_cstr)
 }
 
-fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>, r#async: bool) -> MethodResult {
+fn method_open(method_info: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
     // This is the callback that will be called when another peer on the bus calls our method.
     // the callback receives "MethodInfo" struct and can return either an error, or a list of
     // messages to send back.
 
-    let (workdir, executable, args): (&str, &str, Vec<&str>) = method_info.msg.read3()?;
-    println!(
-        "Exec {}: {}\nArgs: {:?}",
-        if r#async { "async" } else { "sync" },
-        executable,
-        args
-    );
-
-    enum CommandResult {
-        Sync(ExitStatus),
-        Async,
-        Error(io::Error),
-    }
+    let mut items = method_info.msg.iter_init();
+    let workdir: &str = items.read()?;
+    let executable: &str = items.read()?;
+    let args: Vec<&str> = items.read()?;
 
     let mut command = Command::new(&executable);
     command.args(&args).current_dir(workdir);
-    let result = if r#async {
-        match command.spawn() {
-            Ok(_) => CommandResult::Async,
-            Err(e) => CommandResult::Error(e),
-        }
-    } else {
-        match command.status() {
-            Ok(status) => CommandResult::Sync(status),
-            Err(e) => CommandResult::Error(e),
-        }
-    };
 
-    let mret = match result {
-        CommandResult::Sync(status) => {
-            let status_code = match status.code() {
-                Some(code) => code,
-                None => 0,
-            };
-            method_info.msg.method_return().append1::<i32>(status_code)
-        }
-        CommandResult::Async => method_info.msg.method_return(),
-        CommandResult::Error(ref err) if err.kind() == io::ErrorKind::NotFound => {
-            method_error(method_info, err, "simonbru.SessionLaunch.Error.NotFound")
-        }
-        CommandResult::Error(ref err) => {
-            method_error(method_info, err, "simonbru.SessionLaunch.Error.Unknown")
-        }
+    let return_msg = match command.spawn() {
+        Ok(_) => method_info.msg.method_return(),
+        Err(error) => method_error(method_info, &error)
     };
-    Ok(vec![mret])
+    Ok(vec![return_msg])
+}
+
+fn method_exec(method_info: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
+    let mut items = method_info.msg.iter_init();
+    let workdir: &str = items.read()?;
+    let executable: &str = items.read()?;
+    let args: Vec<&str> = items.read()?;
+    let stdin: File = items.read()?;
+    let stdout: File = items.read()?;
+    let stderr: File = items.read()?;
+
+    let mut command = Command::new(&executable);
+    command
+        .args(&args)
+        .current_dir(workdir)
+        .stdin(stdin)
+        .stdout(stdout)
+        .stderr(stderr);
+
+    let return_msg = match command.status() {
+        Ok(status) => {
+            let status_code = status.code().unwrap_or(1);
+            method_info.msg.method_return().append1::<i32>(status_code)
+        },
+        Err(error) => method_error(method_info, &error)
+    };
+    Ok(vec![return_msg])
 }
 
 fn main() {
@@ -96,14 +89,17 @@ fn main() {
                 f.interface("simonbru.SessionLaunch", ())
                     .add_m(
                         // ...and a method inside the interface.
-                        f.method("Exec", (), move |m| method_exec(m, false))
+                        f.method("Exec", (), method_exec)
                             .inarg::<&str, _>("workdir")
                             .inarg::<&str, _>("executable")
                             .inarg::<&[&str], _>("args")
+                            .inarg::<File, _>("stdin")
+                            .inarg::<File, _>("stdout")
+                            .inarg::<File, _>("stderr")
                             .outarg::<&i32, _>("status"),
                     )
                     .add_m(
-                        f.method("Open", (), move |m| method_exec(m, true))
+                        f.method("Open", (), method_open)
                             .inarg::<&str, _>("workdir")
                             .inarg::<&str, _>("executable")
                             .inarg::<&[&str], _>("args"),

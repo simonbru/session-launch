@@ -10,6 +10,9 @@
       <arg name="workdir" type="s" direction="in"/>
       <arg name="executable" type="s" direction="in"/>
       <arg name="args" type="as" direction="in"/>
+      <arg name="stdin" type="h" direction="in"/>
+      <arg name="stdout" type="h" direction="in"/>
+      <arg name="stderr" type="h" direction="in"/>
       <arg name="status" type="i" direction="out"/>
     </method>
   </interface>

@@ -35,7 +35,15 @@ fn method_open(method_info: &MethodInfo<MTSync<()>, ()>) -> MethodResult {
     command.args(&args).current_dir(workdir);
 
     let return_msg = match command.spawn() {
-        Ok(_) => method_info.msg.method_return(),
+        Ok(mut child) => {
+            thread::spawn(move || {
+                // Make sure that we reap zombie processes while the service is running.
+                // If the service exits before all childs have exited, the init process
+                // will reap child process for us.
+                child.wait().unwrap();
+            });
+            method_info.msg.method_return()
+        }
         Err(error) => method_error(method_info, &error)
     };
     Ok(vec![return_msg])

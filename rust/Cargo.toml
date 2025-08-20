@@ -13,6 +13,6 @@ name = "slaunch-service"
 path = "src/bin/service.rs"
 
 [dependencies]
-dbus = "0.9.6"
+dbus = "0.9.7"
 dbus-tree = "0.9.2"
-os_pipe = { version = "1.1.2", features = ["io_safety"] }
+os_pipe = { version = "1.2.2", features = ["io_safety"] }
